@@ -1,4 +1,5 @@
 import './imageLab.css';
+import {createLocalSpeech,localVoices,createGentlePose} from './imageLabSpeechPose';
 import {buildPartPrompt} from './imageLabGuideAudio';
 import {replacePart} from './imageLabCore';
 import {createLocalAudio} from './imageLabAudio';
@@ -17,7 +18,22 @@ let textures={} as Record<Role,string>;let previous=0,elapsed=0,lastSignature=""
 const status=(s:string)=>{el('status').textContent=s;};
 const audioStatus=(s:string)=>{el('audioStatus').textContent=s;};
 const audio=createLocalAudio(value=>{if(project)project.params.ParamMouthOpen=value;input('ParamMouthOpen').value=String(value);el('ParamMouthOpen-value').textContent=value.toFixed(3);},audioStatus,()=>{playing=false;input('follow').checked=false;el('play').textContent='재생';});
+const pose=createGentlePose();
+const synth=window.speechSynthesis;
+const speech=createLocalSpeech({synth,utterance:text=>new SpeechSynthesisUtterance(text),now:()=>performance.now(),setTimer:(f,ms)=>window.setTimeout(f,ms),clearTimer:id=>window.clearTimeout(id),onMouth:value=>{if(project)project.params.ParamMouthOpen=value;input('ParamMouthOpen').value=String(value);el('ParamMouthOpen-value').textContent=value.toFixed(3);},onStatus:text=>{el('ttsStatus').textContent=text;},onTakeover:()=>{stopAudio();playing=false;input('follow').checked=false;el('play').textContent='재생';}});
+function voices(){const select=el<HTMLSelectElement>('ttsVoice'),prior=select.value;select.replaceChildren();for(const voice of localVoices(synth?.getVoices()??[])){const option=document.createElement('option');option.value=voice.voiceURI;option.textContent=`${voice.name} · ${voice.lang} · 로컬`;select.append(option);}if([...select.options].some(o=>o.value===prior))select.value=prior;if(!select.options.length){const option=document.createElement('option');option.value='';option.textContent='로컬 음성 없음';select.append(option);}if(!speech.active)el('ttsStatus').textContent=select.value?'로컬 음성 준비 · 말하기를 눌러.':'오류 · 로컬 음성이 없어. 로컬 오디오 파일을 선택해.';}
+synth?.addEventListener('voiceschanged',voices);voices();
+el('ttsRefresh').addEventListener('click',voices);
+el('ttsSpeak').addEventListener('click',()=>{if(!project||busy)return;stopAudio();speech.speak(el<HTMLTextAreaElement>('ttsText').value,el<HTMLSelectElement>('ttsVoice').value);});
+el('ttsStop').addEventListener('click',()=>speech.stop());
+el('ttsVoice').addEventListener('change',()=>speech.stop('voice'));
+for(const [id,kind] of [['poseBow','bow'],['poseNod','nod'],['poseTilt','tilt']] as const)el(id).addEventListener('click',()=>{if(!project||busy)return;if(pose.start(kind)){playing=false;el('play').textContent='재생';input('follow').checked=false;el('poseStatus').textContent='포즈 진행 · 작은 머리/몸 움직임';}});
+el('poseStop').addEventListener('click',()=>pose.cancel());
 function stopAudio(){if(audio.active){audio.stop();audioStatus('정지 · 입 닫힘 / 오디오 해제');}}
+function stopMotion(){speech.stop('transition');stopAudio();pose.cancel(true);el('poseStatus').textContent='이전 포즈 복원 · 직접 조작 우선';}
+el('audioPlay').addEventListener('click',()=>speech.stop('audio'));
+input('audioFile').addEventListener('change',()=>speech.stop('audio'));
+window.addEventListener('pagehide',()=>{speech.stop('pagehide');pose.cancel(true);synth?.removeEventListener('voiceschanged',voices);});
 el('audioPlay').addEventListener('click',()=>{stopAudio();if(!project||busy){audioStatus('오류 · 이미지 준비가 끝난 뒤 재생해.');return;}const file=input('audioFile').files?.[0];if(!file){audioStatus('오류 · 오디오 파일을 선택해.');return;}void audio.play(file);});
 el('audioStop').addEventListener('click',()=>{audio.stop();audioStatus('정지 · 입 닫힘 / 오디오 해제');});
 input('audioFile').addEventListener('change',()=>{stopAudio();audioStatus(input('audioFile').files?.[0]?'파일 선택 완료 · 재생 버튼을 눌러.':'파일 선택 후 재생해.');});
@@ -38,7 +54,7 @@ function json(value:string,name:string){download(new Blob([value],{type:'applica
 async function run(action:()=>void|Promise<void>){if(busy)return;busy=true;try{await action();}catch(e){status(`오류 · ${e instanceof Error?e.message:String(e)}`);}finally{busy=false;}}
 function maskView(){if(!project||!sourceImage)return;const ctx=mask.getContext('2d')!;ctx.clearRect(0,0,mask.width,mask.height);ctx.drawImage(sourceImage,0,0,mask.width,mask.height);const p=selected();ctx.beginPath();p.polygon.forEach(([x,y],i)=>i?ctx.lineTo(x*mask.width,y*mask.height):ctx.moveTo(x*mask.width,y*mask.height));ctx.closePath();ctx.fillStyle='#60ffc233';ctx.fill();ctx.strokeStyle='#b1ffdd';ctx.lineWidth=2;ctx.stroke();for(const [x,y] of p.polygon){ctx.beginPath();ctx.arc(x*mask.width,y*mask.height,5,0,7);ctx.fillStyle='#fff';ctx.fill();}el<HTMLTextAreaElement>('polygon').value=JSON.stringify(p.polygon);input('order').value=String(p.order);el<HTMLTextAreaElement>('partPrompt').value=buildPartPrompt(p.id);input('placeX').value=String(p.placement?.x??0);input('placeY').value=String(p.placement?.y??0);input('placeScale').value=String(p.placement?.scale??1);}
 function sync(){for(const id of ['tolerance','softness','overlap','stiffness','damping'] as const)input(id).value=String(project.settings[id]);input('key').checked=project.settings.keyEnabled;input('physics').checked=project.settings.physicsEnabled;input('color').value='#'+project.settings.keyColor.map(x=>x.toString(16).padStart(2,'0')).join('');for(const p of PARAMS){input(p.id).value=String(project.params[p.id]);el(`${p.id}-value`).textContent=String(project.params[p.id]);}el<HTMLImageElement>('before').src=project.source.data;maskView();}
-async function rebuild(){stopAudio();status('파트 분리 / 네이티브 리그 준비 중…');const validated=parseProject(serializeProject(project));sourceImage=await decode(validated.source.data);
+async function rebuild(){stopMotion();status('파트 분리 / 네이티브 리그 준비 중…');const validated=parseProject(serializeProject(project));sourceImage=await decode(validated.source.data);
  const ratio=Math.min(1,900/sourceImage.height),w=Math.round(sourceImage.width*ratio),h=Math.round(sourceImage.height*ratio),c=canvas(w,h),ctx=c.getContext('2d')!;ctx.drawImage(sourceImage,0,0,w,h);
  const keyed=chromaKey(ctx.getImageData(0,0,w,h).data,validated.settings);const layers=partitionImage(keyed,w,h,validated.parts,validated.settings.overlap,validated.preset==='supplied-front');const next={} as Record<Role,string>;
  for(const layer of layers){ctx.clearRect(0,0,w,h);ctx.putImageData(new ImageData(new Uint8ClampedArray(layer.pixels),w,h),0,0);const part=validated.parts.find(p=>p.id===layer.id)!;
@@ -51,10 +67,10 @@ async function rebuild(){stopAudio();status('파트 분리 / 네이티브 리그
  }
  const nextRuntime=new RigRuntime(buildImageRig(validated,next,w,h,materials));await nextRuntime.loadAssets();runtime?.dispose();runtime=nextRuntime;lastSignature="";textures=next;project=validated;sync();status('준비 완료 · 로컬 초안 / 최대 포즈 시각 검증 전');}
 for(const role of ROLES){const option=document.createElement('option');option.value=role;option.textContent=LABELS[role];el('role').append(option);}el<HTMLSelectElement>('role').value='head';
-for(const p of PARAMS){const label=document.createElement('label');label.textContent=p.label;const out=document.createElement('output');out.id=`${p.id}-value`;const slider=document.createElement('input');slider.id=p.id;slider.type='range';slider.min=String(p.min);slider.max=String(p.max);slider.step='.1';slider.value=String(p.default);slider.oninput=()=>{if(!project)return;const value=Number(slider.value);stopAudio();playing=false;el('play').textContent='재생';project.params[p.id]=value;slider.value=String(value);out.textContent=slider.value;};label.append(out,slider);el('params').append(label);}
+for(const p of PARAMS){const label=document.createElement('label');label.textContent=p.label;const out=document.createElement('output');out.id=`${p.id}-value`;const slider=document.createElement('input');slider.id=p.id;slider.type='range';slider.min=String(p.min);slider.max=String(p.max);slider.step='.1';slider.value=String(p.default);slider.oninput=()=>{if(!project)return;const value=Number(slider.value);stopMotion();playing=false;el('play').textContent='재생';project.params[p.id]=value;slider.value=String(value);out.textContent=slider.value;};label.append(out,slider);el('params').append(label);}
 function on(id:string,action:()=>void|Promise<void>,event='click'){el(id).addEventListener(event,()=>void run(action));}
 // Independent of run's busy guard: transitions must cancel pending decode immediately.
-for(const [id,event] of [['reset','click'],['play','click'],['source','change'],['load','change']] as const)el(id).addEventListener(event,stopAudio);
+for(const [id,event] of [['reset','click'],['play','click'],['source','change'],['load','change']] as const)el(id).addEventListener(event,stopMotion);
 on('applyPlacement',async()=>{if(!selected().replacement)throw Error('선택 파트 이미지를 먼저 가져와.');const draft=structuredClone(project);draft.parts.find(p=>p.id===selected().id)!.placement={x:input('placeX').valueAsNumber,y:input('placeY').valueAsNumber,scale:input('placeScale').valueAsNumber};const prior=project;project=parseProject(JSON.stringify(draft));try{await rebuild();}catch(e){project=prior;throw e;}});
 on('source',async()=>{const f=input('source').files?.[0];if(!f)return;project=replaceSource(project,await local(f,f.name));await rebuild();status('원본 교체 완료 · 기존 마스크 유지. 다른 구도라면 조정해 줘.');},'change');
 on('part',async()=>{const f=input('part').files?.[0];if(!f)return;Object.assign(selected(),replacePart(selected(),await local(f,f.name)));await rebuild();},'change');
@@ -72,7 +88,23 @@ let drag=-1,oldPolygon:typeof project.parts[number]['polygon'];
 mask.onpointerdown=e=>{if(!project||busy)return;const r=mask.getBoundingClientRect(),x=(e.clientX-r.left)/r.width,y=(e.clientY-r.top)/r.height;drag=selected().polygon.findIndex(p=>Math.hypot((p[0]-x)*r.width,(p[1]-y)*r.height)<15);oldPolygon=structuredClone(selected().polygon);mask.setPointerCapture(e.pointerId);};
 mask.onpointermove=e=>{if(drag<0||busy)return;const r=mask.getBoundingClientRect();selected().polygon[drag]=[Math.max(0,Math.min(1,(e.clientX-r.left)/r.width)),Math.max(0,Math.min(1,(e.clientY-r.top)/r.height))];maskView();};
 mask.onpointerup=()=>{if(drag<0)return;drag=-1;void run(async()=>{try{parseProject(JSON.stringify(project));}catch(e){selected().polygon=oldPolygon;maskView();throw e;}await rebuild();});};
-stage.onpointermove=e=>{if(!project||audio.active||playing||!input('follow').checked)return;const r=stage.getBoundingClientRect();project.params.ParamAngleX=((e.clientX-r.left)/r.width-.5)*24;project.params.ParamAngleY=(.5-(e.clientY-r.top)/r.height)*16;};
-function frame(now:number){const dt=Math.min(.05,(now-previous)/1000);previous=now;if(runtime&&project){audio.tick(dt);if(playing){elapsed+=dt;project.params.ParamAngleX=Math.sin(elapsed)*8;project.params.ParamAngleY=Math.sin(elapsed*.7)*4;project.params.ParamBodyAngleZ=Math.sin(elapsed*.6)*2;const blink=elapsed%4;project.params.ParamEyeLOpen=project.params.ParamEyeROpen=blink<.16?Math.abs(blink-.08)/.08:1;}const signature=JSON.stringify([project.params,project.settings.physicsEnabled,closeup,input('mesh').checked,stage.clientWidth,stage.clientHeight]);if(needsLabRender(playing,lastSignature,signature)){if(!playing)runtime.resumeClock();runtime.render(stage,project.params,{transparent:true,showBounds:input('mesh').checked,zoom:closeup?3:1,panY:closeup?stage.clientHeight*.95:0,fitPadding:20});lastSignature=signature;}}requestAnimationFrame(frame);}requestAnimationFrame(frame);
+stage.onpointermove=e=>{if(!project||audio.active||speech.active||pose.active||playing||!input('follow').checked)return;const r=stage.getBoundingClientRect();project.params.ParamAngleX=((e.clientX-r.left)/r.width-.5)*24;project.params.ParamAngleY=(.5-(e.clientY-r.top)/r.height)*16;};
+function frame(now:number){
+ const dt=Math.min(.05,(now-previous)/1000);previous=now;
+ if(runtime&&project){
+  audio.tick(dt);speech.tick(now);
+  if(playing){elapsed+=dt;project.params.ParamAngleX=Math.sin(elapsed)*8;project.params.ParamAngleY=Math.sin(elapsed*.7)*4;project.params.ParamBodyAngleZ=Math.sin(elapsed*.6)*2;const blink=elapsed%4;project.params.ParamEyeLOpen=project.params.ParamEyeROpen=blink<.16?Math.abs(blink-.08)/.08:1;}
+  const wasPosing=pose.active,renderParams=pose.tick(dt,project.params);
+  if(wasPosing&&!pose.active)el('poseStatus').textContent='이전 포즈 복원 완료';
+  const active=playing||audio.active||speech.active||pose.active;
+  // Include overlay and ownership so the final exact baseline is rendered, then idle.
+  const signature=JSON.stringify([renderParams,active,project.settings.physicsEnabled,closeup,input('mesh').checked,stage.clientWidth,stage.clientHeight]);
+  if(needsLabRender(active,lastSignature,signature)){
+   if(!playing)runtime.resumeClock();
+   runtime.render(stage,renderParams,{transparent:true,showBounds:input('mesh').checked,zoom:closeup?3:1,panY:closeup?stage.clientHeight*.95:0,fitPadding:20});lastSignature=signature;
+  }
+ }
+ requestAnimationFrame(frame);
+}requestAnimationFrame(frame);
 el<HTMLImageElement>('reference').src=reference;
 void run(async()=>{const response=await fetch(front);if(!response.ok)throw Error('샘플 로드 실패');project=createProject(await local(await response.blob(),'supplied-front.jpg'),true);await rebuild();});
