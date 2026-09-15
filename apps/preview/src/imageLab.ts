@@ -1,4 +1,8 @@
 import './imageLab.css';
+import {createMicrophone} from './imageLabMicrophone';
+import {createCamera} from './imageLabCamera';
+import {applyFace} from './imageLabFace';
+import {installBroadcast} from './imageLabBroadcast';
 import {createLocalSpeech,localVoices,createGentlePose,composeLabMotion,labRigidMotion} from './imageLabSpeechPose';
 import {validateSpeechPack,packShape,MAX_PACK_BYTES,type SpeechPack} from './imageLabSpeechPack';
 import {buildPartPrompt} from './imageLabGuideAudio';
@@ -23,6 +27,21 @@ const mouthOverlay=(value:number)=>{speechMouth=value;};
 // A speech session owns only mouth openness. Closing is persistent; never restore a saved open mouth.
 const takeMouth=()=>{if(project){project.params.ParamMouthOpen=0;input('ParamMouthOpen').value='0';}speechMouth=0;};
 const audio=createLocalAudio(mouthOverlay,audioStatus,takeMouth);
+installBroadcast();
+const cameraPanel=document.createElement('section');
+cameraPanel.innerHTML='<button id="cameraStart">카메라 시작</button><button id="cameraStop">카메라 정지</button><button id="cameraCalibrate">현재 얼굴 중립 보정</button><button id="micDiagnostic">입력 장치 확인</button><p>얼굴만 추적 · 손/전신 추적 없음. 눈·입 표현과 전체 캐릭터 위치/기울임, 비율 유지. CAMERA 폴더 포함 localhost 패키지 필요. 영상 저장/전송 없음.</p><p id="cameraStatus" role="status">카메라 꺼짐</p>';
+el('broadcastControls').append(cameraPanel);
+const camera=createCamera(s=>{el('cameraStatus').textContent=s;});
+el('cameraStart').addEventListener('click',()=>{if(project&&!busy)void camera.start();});
+el('cameraStop').addEventListener('click',()=>camera.stop());
+el('cameraCalibrate').addEventListener('click',()=>camera.calibrate());
+el('micDiagnostic').addEventListener('click',async()=>{try{const devices=await navigator.mediaDevices.enumerateDevices();const count=devices.filter(d=>d.kind==='audioinput').length;el('micStatus').textContent=count?`오디오 입력 ${count}개 표시됨 (기본 장치 포함 가능) · 시스템에서 기본 입력 선택 후 마이크 시작`:'표시되는 오디오 입력 없음 · USB 마이크를 연결하거나 실제 입력이 있는 노트북에서 열어 줘. 권한/브라우저가 목록을 숨길 수도 있어.';}catch{el('micStatus').textContent='장치 확인 불가 · localhost와 브라우저 권한을 확인해.';}});
+window.addEventListener('pagehide',()=>camera.stop('pagehide'));
+const mic=createMicrophone(mouthOverlay,s=>{el('micStatus').textContent=s;},()=>{speech.stop('mic');stopAudio();takeMouth();});
+el('micStart').addEventListener('click',()=>{if(project&&!busy)void mic.start();});
+el('micStop').addEventListener('click',()=>mic.stop());
+input('micSensitivity').addEventListener('input',()=>mic.setSensitivity(input('micSensitivity').valueAsNumber));
+window.addEventListener('pagehide',()=>mic.stop('pagehide'));
 let loadedPack:SpeechPack|undefined,playingPack:SpeechPack|undefined,packGeneration=0;
 const packPanel=document.createElement('section');
 const packLabel=document.createElement('label');packLabel.textContent='오프라인 speech pack (.speech.json, 최대 5MB)';
@@ -46,8 +65,8 @@ el('ttsVoice').addEventListener('change',()=>speech.stop('voice'));
 const poseButtons=[['poseBow','bow'],['poseNod','nod'],['poseTilt','tilt']] as const;
 for(const [id,kind] of poseButtons)el(id).addEventListener('click',()=>{if(!project||busy)return;if(pose.start(kind))el('poseStatus').textContent='포즈 진행 · 캐릭터 전체 인사 기울임 (머리만 회전 아님)';});
 el('poseStop').addEventListener('click',()=>pose.cancel());
-function stopAudio(){packGeneration++;playingPack=undefined;audio.stop();audioStatus('정지 · 입 닫힘 / 오디오 해제');}
-function stopMotion(){speech.stop('transition');stopAudio();pose.cancel(true);el('poseStatus').textContent='이전 포즈 복원 · 직접 조작 우선';}
+function stopAudio(){mic.stop();packGeneration++;playingPack=undefined;audio.stop();audioStatus('정지 · 입 닫힘 / 오디오 해제');}
+function stopMotion(){camera.stop();speech.stop('transition');stopAudio();pose.cancel(true);el('poseStatus').textContent='이전 포즈 복원 · 직접 조작 우선';}
 el('audioPlay').addEventListener('click',()=>speech.stop('audio'));
 input('audioFile').addEventListener('change',()=>speech.stop('audio'));
 window.addEventListener('pagehide',()=>{speech.stop('pagehide');pose.cancel(true);synth?.removeEventListener('voiceschanged',voices);});
@@ -109,23 +128,25 @@ stage.onpointermove=e=>{if(!project||!input('follow').checked)return;const r=sta
 function frame(now:number){
  const dt=Math.min(.05,(now-previous)/1000);previous=now;
  if(runtime&&project){
-  audio.tick(dt);speech.tick(now);
+  audio.tick(dt);speech.tick(now);mic.tick(dt);
   const wasPosing=pose.active,poseMotion=pose.tick(dt);
   if(wasPosing&&!pose.active)el('poseStatus').textContent='전체 기울임 복원 완료';
   for(const [id,kind] of poseButtons)el(id).setAttribute('aria-pressed',String(pose.kind===kind));
-  const active=playing||audio.active||speech.active||pose.active;
+  const active=playing||audio.active||speech.active||mic.active||pose.active||camera.active;
   if(active)elapsed+=dt;else elapsed=0;
-  const renderParams=composeLabMotion(project.params,{seconds:elapsed,active,mouth:audio.active||speech.active?speechMouth:undefined});
+  let renderParams=composeLabMotion(project.params,{seconds:elapsed,active,mouth:audio.active||speech.active||mic.active?speechMouth:undefined});
+  if(camera.active)renderParams=applyFace(renderParams,camera.pose,audio.active||speech.active||mic.active);
   if(playingPack&&audio.active){const shape=packShape(playingPack,audio.currentTime,speechMouth);renderParams.ParamMouthForm=shape.form;renderParams.ParamMouthOpen=shape.open;}
   // Without registered expression textures, do not automatically scale face cutouts.
   for(const [id,asset] of [['ParamEyeLOpen','eye-left-closed'],['ParamEyeROpen','eye-right-closed'],['ParamMouthOpen','mouth-A']]){
    if(!runtime.rig.assets.some(a=>a.id===asset))renderParams[id]=project.params[id];
   }
-  const motion=labRigidMotion(elapsed,playing||audio.active||speech.active);
+  const motion=labRigidMotion(elapsed,playing||audio.active||speech.active||mic.active);
   // Drive only the spring, never head/body geometry or saved parameters.
   renderParams.ParamHairDrive=active?Math.max(-4,Math.min(4,2.4*Math.sin(elapsed*1.8)+poseMotion.rotation*.7)):0;
   stage.style.transformOrigin='50% 85%';
-  stage.style.transform=`translate(${motion.x+poseMotion.x}px, ${motion.y+poseMotion.y}px) rotate(${motion.rotation+poseMotion.rotation}deg)`;
+  const rigid=camera.active?camera.pose:{x:motion.x+poseMotion.x,y:motion.y+poseMotion.y,rotation:motion.rotation+poseMotion.rotation};
+  stage.style.transform=`translate(${rigid.x}px, ${rigid.y}px) rotate(${rigid.rotation}deg)`;
   // Sliders stay editable baselines; outputs describe the actual expression sent to the renderer.
   for(const p of PARAMS)el(`${p.id}-value`).textContent=renderParams[p.id].toFixed(3);
   // Include overlay and ownership so the final exact baseline is rendered, then idle.

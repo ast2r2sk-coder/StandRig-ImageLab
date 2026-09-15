@@ -21,7 +21,7 @@ Edit part masks, try expressions and hair physics, then export a portable HTML p
 
 ## Current development snapshot
 
-The latest implementation is on **`feat/part-guide-local-audio`**, tracked in [PR #1](https://github.com/ast2r2sk-coder/StandRig-ImageLab/pull/1), not merged into `image-lab`. The demo GIF illustrates an earlier build, not the new speech-pack feature.
+The default branch `image-lab` includes experimental broadcast mode, opt-in microphone RMS and local camera face following; see [setup, privacy, limitations and verification](docs/BROADCAST.md). The demo GIF illustrates an earlier build, not the new speech-pack feature.
 
 - Speech/audio, blinking and gentle motion run concurrently; pose clicks restart and return to the previous pose without interrupting speech.
 - Automatic motion uses small rigid translation/rotation instead of deforming the face/body. Hair spring effects are isolated and conservative. Manual angle sliders/pointer can still warp the image.
@@ -61,7 +61,7 @@ The Image Lab editor does not automatically upload your artwork or require an im
 Use **Node.js 22 or 24**, npm, and a desktop browser. Chrome is the browser used for the sample's local checks.
 
 ```bash
-git clone --branch feat/part-guide-local-audio https://github.com/ast2r2sk-coder/StandRig-ImageLab.git
+git clone --branch image-lab https://github.com/ast2r2sk-coder/StandRig-ImageLab.git
 cd StandRig-ImageLab
 npm ci
 npm run build
@@ -112,7 +112,7 @@ Small motions and sample expressions are the useful starting point. Large turns 
 - The supplied head/body underlay images are included as references, but are **not applied at runtime**.
 - Expression transitions use texture blending. Skin seams, intermediate ghosting, magenta edge residue and thin mesh lines may remain visible.
 - Replacing the source disables the sample-specific expression overlays. New characters need their own masks and registered expression artwork.
-- Local audio files support amplitude-only mouth opening, not phoneme alignment. TTS accepts only browser-reported local voices, with no remote/default fallback; its mouth rhythm approximates start/boundary events and does not measure audio RMS. Missing local voices produce an error and suggest a local audio file. Microphone input is unsupported; audio is not saved in project JSON. There is **no Cubism `.moc3`/`.cmo3` export** or camera face tracking.
+- Local audio files support amplitude-only mouth opening, not phoneme alignment. TTS accepts only browser-reported local voices, with no remote/default fallback; its mouth rhythm approximates start/boundary events and does not measure audio RMS. Missing local voices produce an error and suggest a local audio file. Microphone RMS and local camera face following are experimental modes described in the broadcast guide; audio is not saved in project JSON. There is **no Cubism `.moc3`/`.cmo3` export**, isolated head rotation or full-body tracking.
 - The interface is not yet translated. Mobile file opening and exports need more testing.
 
 See the [detailed usage notes](README-IMAGE-LAB.md) and [material inventory](docs/IMAGE-LAB-MATERIALS.md) before building on the sample.

@@ -1,5 +1,5 @@
 import {rolldown} from 'rolldown';
-import {readFile,writeFile,mkdir,readdir} from 'node:fs/promises';
+import {readFile,writeFile,mkdir,readdir,cp} from 'node:fs/promises';
 import {resolve} from 'node:path';
 const root=resolve('apps/preview/dist'),destination=resolve('workspace/delivery');await mkdir(destination,{recursive:true});
 let html=await readFile(root+'/image-lab.html','utf8');
@@ -13,3 +13,4 @@ html=html.replace(/<script[^>]*src="[^"]+"[^>]*><\/script>/g,'').replace(/<link[
 html=html.replace('</head>','<style>'+await readFile(root+css,'utf8')+'</style></head>');
 html=html.replace('</body>','<script>'+output.find(x=>x.type==='chunk').code.replace(/<\/script/gi,'<\\/script')+'</script></body>');
 await writeFile(destination+'/Image-Lab.html',html);console.log(JSON.stringify({file:destination+'/Image-Lab.html',bytes:Buffer.byteLength(html)}));
+await cp(resolve('apps/preview/public/CAMERA'),destination+'/CAMERA',{recursive:true});
