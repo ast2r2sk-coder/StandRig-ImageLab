@@ -12,5 +12,5 @@ export default defineConfig({
   } }],
   server: { host: '127.0.0.1', port: 5181, strictPort: true,
     proxy: { '/api': proxy, '/assets': proxy } },
-  build: { rollupOptions: { input: { index: 'index.html', player: 'player.html' } } }
+  build: { rollupOptions: { input: { index: 'index.html', player: 'player.html', imageLab: 'image-lab.html' } } }
 });

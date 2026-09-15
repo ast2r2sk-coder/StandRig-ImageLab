@@ -16,3 +16,8 @@ releases/
 !.env.example
 *.psd
 *.psb
+.DS_Store
+*.pem
+*.key
+# Local execution brief; public product instructions are in README/docs.
+IMAGE-LAB-BRIEF.md

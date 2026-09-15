@@ -1,3 +1,24 @@
+# Image Lab — image-first StandRig
+
+PNG/JPG로 시험하는 PSD 없는 2D 모델링용 **StandRig 공개 포크**다. 검토된 Image Lab 복원 스냅샷을 바탕으로 하며, [실행 및 사용법과 복원 한계](README-IMAGE-LAB.md), [소재 수령 상태](docs/IMAGE-LAB-MATERIALS.md)를 먼저 읽는다.
+
+**상태: 제공 소재로 눈·입 표정을 적용한 복원 초안이며, 완성된 Live2D 모델이나 Cubism `.moc3` / `.cmo3`가 아니다.** 추가 소재는 수령했으며 더 요청하지 않는다. `head-underlay.jpg`와 `body-underlay.jpg`는 정렬 미검증으로 보관만 하고 런타임에서 사용하지 않는다. 숨은 부분 복원과 최대·복합 포즈의 시각 검증은 미완료다.
+
+제공자의 허락으로 `assets/character/`의 사용자 제공 이미지를 이 공개 포크와 해당 빌드에 포함해 공개 배포한다. 코드의 Apache-2.0 라이선스가 캐릭터 아트에 자동 적용되지는 않으며, 별도의 아트 상업 이용·재배포 라이선스를 부여하지 않는다. 저작권 소유를 주장하지 않는다. [캐릭터 고지](assets/character/NOTICE.md)를 확인하고, 배포 시 `LICENSE`, `NOTICE`, `THIRD_PARTY_NOTICES.md`, `licenses/` 및 캐릭터 고지를 함께 보존한다.
+
+```sh
+npm ci
+npm run build
+npm run dev
+# http://127.0.0.1:5181/image-lab.html
+```
+
+단일 오프라인 HTML: 빌드 후 `node scripts/package-image-lab.mjs` → `workspace/delivery/Image-Lab.html`.
+
+아래는 원 프로젝트 StandRig의 설명이다. Image Lab은 PNG/JPG 입력을 추가한 로컬 확장이며, 원 StandRig의 PSD 입력 제한과 구별한다. 원 저작권 및 Apache-2.0 라이선스를 유지한다.
+
+---
+
 # StandRig
 
 [日本語](README.md) | [English](README.en.md)

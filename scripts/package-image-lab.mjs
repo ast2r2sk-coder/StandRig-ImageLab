@@ -1,0 +1,15 @@
+import {rolldown} from 'rolldown';
+import {readFile,writeFile,mkdir,readdir} from 'node:fs/promises';
+import {resolve} from 'node:path';
+const root=resolve('apps/preview/dist'),destination=resolve('workspace/delivery');await mkdir(destination,{recursive:true});
+let html=await readFile(root+'/image-lab.html','utf8');
+const entry=html.match(/src="(\/assets\/imageLab-[^"]+\.js)"/)[1];
+const css=html.match(/href="(\/assets\/imageLab-[^"]+\.css)"/)[1];
+const assetNames=(await readdir(root+'/assets')).filter(s=>/^(front|reference-sheet|expression-sheet)-.*\.jpg$/.test(s));
+const embedded=Object.fromEntries(await Promise.all(assetNames.map(async name=>['/assets/'+name,'data:image/jpeg;base64,'+(await readFile(root+'/assets/'+name)).toString('base64')])));
+const bundle=await rolldown({input:root+entry,plugins:[{name:'local-source-embedding',transform(code){for(const [url,data] of Object.entries(embedded))code=code.replaceAll(url,data);return code;}}]});
+const {output}=await bundle.generate({format:'iife'});await bundle.close();
+html=html.replace(/<script[^>]*src="[^"]+"[^>]*><\/script>/g,'').replace(/<link[^>]+>/g,'');
+html=html.replace('</head>','<style>'+await readFile(root+css,'utf8')+'</style></head>');
+html=html.replace('</body>','<script>'+output.find(x=>x.type==='chunk').code.replace(/<\/script/gi,'<\\/script')+'</script></body>');
+await writeFile(destination+'/Image-Lab.html',html);console.log(JSON.stringify({file:destination+'/Image-Lab.html',bytes:Buffer.byteLength(html)}));

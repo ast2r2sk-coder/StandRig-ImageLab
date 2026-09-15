@@ -1,0 +1,19 @@
+{
+  "status": "draft-only-not-model-freeze",
+  "scope": "Restored Image Lab draft for an approved public fork. Supplied sources received; no further images requested. Publication preparation does not change runtime behavior.",
+  "upstreamRevision": "33e15309c44f8122a88e01ed7e71efc9989cb652",
+  "sources": [
+    {"file": "front.jpg", "sha256": "c31973f5d46e85b7d0ae3c18f099a058f33a28433a79101527e16629c0f2ebc2", "coverage": "user-supplied neutral front, 1024x1536"},
+    {"file": "reference-sheet.jpg", "sha256": "6e2737f5c6ec156ed227dc558276c88664e18d7175969c0df249430a8dbb198d", "coverage": "user-supplied multi-view/expression/parts sheet, 1226x1283; currently displayed, not extracted"},
+    {"file":"head-reference.jpg","original":"img_8f0ac20ba3bc.jpg","sha256":"7874769425adcb578dc6cf7b36c953efc8670d36bae6fc45803006830fcdeb5b","coverage":"3x3 yaw/pitch reference; informs authored differential shared warp, not calibrated 3D angles"},
+    {"file":"expression-sheet.jpg","original":"img_7fc428fd3488.jpg","sha256":"a13e46d17499212cddba0ab2a0c1033d8b010454059d1ba7d2a4e80b0e0e6135","coverage":"real half/closed eyes and A/E/O mouth pixels extracted into native layers"},
+    {"file":"head-underlay.jpg","original":"img_fdfac7123976.jpg","sha256":"7a180296a13c7f8e80bbb6a94fc8ff03c4e44e86d8160ceaf737aad884246331","coverage":"retained only: crop/proportion registration not approved"},
+    {"file":"body-underlay.jpg","original":"img_6f7bba0dbd24.jpg","sha256":"80f5ed65089118b532cf1da27c230a41a6828971a30cc64f95d28ce54bf2641c","coverage":"retained only: garment registration not approved"}
+  ],
+  "rights": "User-supplied images are included in this public fork and its builds with the provider's permission. Code remains Apache-2.0; that license does not automatically license artwork. No copyright ownership is asserted and no separate downstream commercial-use or redistribution license for the artwork is granted. See NOTICE.md in this directory.",
+  "pendingValidation": ["maximum head yaw/pitch and compound pose comparison", "body yaw/pitch and overlaps", "expression skin boundaries and registration", "hidden head/body material registration"],
+  "visuallyValidatedAngleRanges": null,
+  "preprocessing": "Manual normalized polygon masks and chroma key, sample-specific mint classification, sampled skin underlay; no AI segmentation or inpainting.",
+  "next": "docs/IMAGE-LAB-MATERIALS.md",
+  "completion": "Restored draft, not a finished Live2D model or Model Freeze; no Cubism moc3/cmo3 output. Head/body underlays are retained but unused at runtime; hidden-part restoration and maximum/compound pose visual validation remain incomplete."
+}
