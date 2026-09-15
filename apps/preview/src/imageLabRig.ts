@@ -23,17 +23,17 @@ export function buildImageRig(project:LabProject,images:Record<Role,string>,widt
  });
  const hair=field('hair-field','head-rig',.45,(x,y)=>{
   const lateral=smooth((Math.abs(x-hx)-.09)/.10),vertical=smooth((y-.10)/.16)*(1-smooth((y-.35)/.10));
-  const amount=width*.012*lateral*vertical;
+  const amount=Math.min(1,width*.012)*lateral*vertical;
   return [key('ParamHairSway','offsetX',4,-amount,amount)];
  });
- const rig:RigDocument={schemaVersion:'0.1.0',name:'Image Lab / continuous-field draft',stage:{width,height,background:'transparent'},parameters:[...PARAMS.map(p=>({...p})),{id:'ParamHairSway',label:'Hair spring',min:-4,max:4,default:0}],deformers:[body,head,hair],
+ const rig:RigDocument={schemaVersion:'0.1.0',name:'Image Lab / continuous-field draft',stage:{width,height,background:'transparent'},parameters:[...PARAMS.map(p=>({...p})),{id:'ParamHairDrive',label:'Hair spring input only',min:-4,max:4,default:0},{id:'ParamHairSway',label:'Hair spring',min:-4,max:4,default:0}],deformers:[body,head,hair],
  assets:project.parts.map(p=>({id:p.id,name:LABELS[p.id],type:'image',width,height,src:images[p.id]})),
  parts:project.parts.map(p=>{const t=transform();const bindings=[];
  if(p.id.startsWith('eye')||p.id==='mouth'){
  const xs=p.polygon.map(v=>v[0]),ys=p.polygon.map(v=>v[1]);t.pivotX=(Math.min(...xs)+Math.max(...xs))/2;t.pivotY=(Math.min(...ys)+Math.max(...ys))/2;t.x=t.pivotX*width;t.y=t.pivotY*height;
  bindings.push({parameter:p.id==='mouth'?'ParamMouthOpen':p.id==='eye-left'?'ParamEyeLOpen':'ParamEyeROpen',property:'scaleY' as const,additive:false,keys:p.id==='mouth'?[{input:0,value:1},{input:1,value:2}]:[{input:0,value:.04},{input:1,value:1}]});}
- return {id:p.id,name:LABELS[p.id],kind:'image' as const,assetId:p.id,parentId:null,deformerId:'hair-field',visible:true,drawOrder:p.order,transform:t,bindings};}),
- physics:{enabled:project.settings.physicsEnabled,chains:[{id:'hair-spring',name:'Continuous hair spring',enabled:true,targetPartIds:[],sourceParameters:[{parameter:'ParamAngleX',scale:.22},{parameter:'ParamAngleZ',scale:.2},{parameter:'ParamBodyAngleZ',scale:.15}],stiffness:project.settings.stiffness,damping:project.settings.damping,mass:1,gravity:0,wind:0,output:{property:'rotation',scale:0},parameterOutput:{parameter:'ParamHairSway',scale:1,min:-4,max:4},segments:[{id:'tip',length:1,delay:.06,damping:1}]}]}};
+ return {id:p.id,name:LABELS[p.id],kind:'image' as const,assetId:p.id,parentId:null,deformerId:p.id.startsWith('hair-')?'hair-field':'head-rig',visible:true,drawOrder:p.order,transform:t,bindings};}),
+ physics:{enabled:project.settings.physicsEnabled,chains:[{id:'hair-spring',name:'Continuous hair spring',enabled:true,targetPartIds:[],sourceParameters:[{parameter:'ParamHairDrive',scale:1}],stiffness:project.settings.stiffness,damping:project.settings.damping,mass:1,gravity:0,wind:0,output:{property:'rotation',scale:0},parameterOutput:{parameter:'ParamHairSway',scale:1,min:-4,max:4},segments:[{id:'tip',length:1,delay:.06,damping:1}]}]}};
  if(project.preset==='supplied-front'){
   for(const p of head.sharedWarp!.controlPoints){
    const x=p.column/16,y=p.row/16*project.anchors.headJoin;
@@ -50,7 +50,7 @@ export function buildImageRig(project:LabProject,images:Record<Role,string>,widt
    for(const [id] of entries){
     const bindings=role==='mouth'?[opacity(parameter,[[0,0],[1,1]]),opacity('ParamMouthForm',[[-1,id==='mouth-E'?1:0],[0,id==='mouth-A'?1:0],[1,id==='mouth-O'?1:0]])]:[opacity(parameter,[[0,id.endsWith('closed')?1:0],[.5,id.endsWith('half')?1:0],[1,0]])];
     rig.assets.push({id,name:id,type:'image',width,height,src:materials[id as MaterialId]!});
-    rig.parts.push({id,name:id,kind:'image',assetId:id,parentId:null,deformerId:'hair-field',visible:true,drawOrder:region.order,transform:transform(),bindings});
+    rig.parts.push({id,name:id,kind:'image',assetId:id,parentId:null,deformerId:'head-rig',visible:true,drawOrder:region.order,transform:transform(),bindings});
    }
   }
  }

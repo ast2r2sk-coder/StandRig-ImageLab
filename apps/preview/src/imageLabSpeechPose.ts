@@ -1,4 +1,10 @@
-import {PARAMS} from './imageLabCore';
+export type RigidMotion={x:number;y:number;rotation:number};
+const identity=():RigidMotion=>({x:0,y:0,rotation:0});
+/** Uniform stage translation/rotation, never parameter-driven face/body deformation. */
+export function labRigidMotion(seconds:number,active:boolean):RigidMotion{
+ return active?{x:Math.sin(seconds*.9)*1.5,y:Math.sin(seconds*1.4),rotation:Math.sin(seconds)*.6}:identity();
+}
+
 
 /** Browser-reported local voices only; never fall back to the default/remote engine. */
 export function localVoices(voices:SpeechSynthesisVoice[]):SpeechSynthesisVoice[]{
@@ -60,28 +66,40 @@ export function createLocalSpeech(o:SpeechOptions){
  }};
 }
 export type GentlePose='bow'|'nod'|'tilt';
+/** Texture-expression overlay only. Never write automatic head/body warp deltas. */
+export function composeLabMotion(base:Record<string,number>,o:{seconds:number;active:boolean;mouth?:number}){
+ const result={...base};
+ if(o.active){
+  const blink=o.seconds%4,factor=blink<.24?Math.abs(blink-.12)/.12:1;
+  for(const id of ['ParamEyeLOpen','ParamEyeROpen'])result[id]=(base[id]??1)*factor;
+ }
+ if(o.mouth!==undefined)result.ParamMouthOpen=o.mouth;
+ return result;
+}
 const DURATION=2.4;
 const smooth=(t:number)=>{const x=Math.max(0,Math.min(1,t));return x*x*(3-2*x);};
-/** Offset envelope with zero velocity at endpoints, in existing parameter units only. */
-export function poseTimeline(kind:GentlePose,seconds:number):Record<string,number>{
+/** Whole-character greeting tilt, NOT head-only nod or perspective bow. */
+export function poseTimeline(kind:GentlePose,seconds:number):RigidMotion{
  if(!['bow','nod','tilt'].includes(kind)||!Number.isFinite(seconds))throw Error('Invalid gentle pose');
- const t=Math.max(0,Math.min(1,seconds/DURATION));
- const envelope=t===0||t===1?0:Math.sin(Math.PI*smooth(t))**2;
- return {ParamAngleY:kind==='bow'?-4*envelope:kind==='nod'?-3*envelope:0,ParamAngleZ:kind==='tilt'?3*envelope:0,ParamBodyAngleY:kind==='bow'?-1.5*envelope:0};
+ const t=Math.max(0,Math.min(DURATION,seconds));
+ const envelope=kind==='nod'?Math.sin(Math.PI*smooth((t%1.2)/1.2))**2:t<.6?smooth(t/.6):t<1.2?1:1-smooth((t-1.2)/1.2);
+ return {x:0,y:(kind==='tilt'?0:3)*envelope,rotation:(kind==='tilt'?-2:2)*envelope};
 }
-/** Render-only overlay: project angles remain the saved prior pose; mouth is never owned. */
 export function createGentlePose(){
  let kind:GentlePose|undefined,elapsed=0,returning=false,returnTime=0;
- let offset:Record<string,number>={},returnFrom:Record<string,number>={};
+ let offset=identity(),returnFrom=identity(),restartFrom=identity();
  return {
   get active(){return kind!==undefined;},
-  start(next:GentlePose){if(kind)return false;poseTimeline(next,0);kind=next;elapsed=0;returning=false;offset=poseTimeline(next,0);return true;},
-  cancel(immediate=false){if(immediate){kind=undefined;offset={};return;}if(kind&&!returning){returning=true;returnTime=0;returnFrom={...offset};}},
-  tick(dt:number,params:Record<string,number>){
-   if(!kind)return params;
-   if(returning){returnTime+=Math.max(0,dt);const scale=1-smooth(returnTime/.3);offset=Object.fromEntries(Object.entries(returnFrom).map(([id,v])=>[id,v*scale]));if(returnTime>=.3){kind=undefined;return params;}}
-   else{elapsed+=Math.max(0,dt);if(elapsed>=DURATION){kind=undefined;return params;}offset=poseTimeline(kind,elapsed);}
-   const result={...params};for(const [id,value] of Object.entries(offset)){if(!value)continue;const p=PARAMS.find(p=>p.id===id)!;result[id]=Math.max(p.min,Math.min(p.max,(params[id]??0)+value));}return result;
+  get kind(){return kind;},
+  get progress(){return Math.min(1,elapsed/DURATION);},
+  start(next:GentlePose){poseTimeline(next,0);restartFrom=kind?{...offset}:identity();kind=next;elapsed=0;returning=false;offset={...restartFrom};return true;},
+  cancel(immediate=false){if(immediate){kind=undefined;offset=identity();return;}if(kind&&!returning){returning=true;returnTime=0;returnFrom={...offset};}},
+  tick(dt:number):RigidMotion{
+   if(!Number.isFinite(dt)||dt<0)throw Error('Invalid pose delta');
+   if(!kind)return identity();
+   if(returning){returnTime+=dt;const scale=1-smooth(returnTime/.3);offset={x:returnFrom.x*scale,y:returnFrom.y*scale,rotation:returnFrom.rotation*scale};if(returnTime>=.3){kind=undefined;return identity();}}
+   else{elapsed+=dt;if(elapsed>=DURATION){kind=undefined;return identity();}offset=poseTimeline(kind,elapsed);const blend=smooth(elapsed/.3);for(const id of ['x','y','rotation'] as const)offset[id]=restartFrom[id]*(1-blend)+offset[id]*blend;}
+   return {...offset};
   }
  };
 }

@@ -1,5 +1,6 @@
 import './imageLab.css';
-import {createLocalSpeech,localVoices,createGentlePose} from './imageLabSpeechPose';
+import {createLocalSpeech,localVoices,createGentlePose,composeLabMotion,labRigidMotion} from './imageLabSpeechPose';
+import {validateSpeechPack,packShape,MAX_PACK_BYTES,type SpeechPack} from './imageLabSpeechPack';
 import {buildPartPrompt} from './imageLabGuideAudio';
 import {replacePart} from './imageLabCore';
 import {createLocalAudio} from './imageLabAudio';
@@ -17,25 +18,41 @@ let project:LabProject,runtime:RigRuntime|undefined,sourceImage:HTMLImageElement
 let textures={} as Record<Role,string>;let previous=0,elapsed=0,lastSignature="";
 const status=(s:string)=>{el('status').textContent=s;};
 const audioStatus=(s:string)=>{el('audioStatus').textContent=s;};
-const audio=createLocalAudio(value=>{if(project)project.params.ParamMouthOpen=value;input('ParamMouthOpen').value=String(value);el('ParamMouthOpen-value').textContent=value.toFixed(3);},audioStatus,()=>{playing=false;input('follow').checked=false;el('play').textContent='재생';});
+let speechMouth=0,wasActive=false;
+const mouthOverlay=(value:number)=>{speechMouth=value;};
+// A speech session owns only mouth openness. Closing is persistent; never restore a saved open mouth.
+const takeMouth=()=>{if(project){project.params.ParamMouthOpen=0;input('ParamMouthOpen').value='0';}speechMouth=0;};
+const audio=createLocalAudio(mouthOverlay,audioStatus,takeMouth);
+let loadedPack:SpeechPack|undefined,playingPack:SpeechPack|undefined,packGeneration=0;
+const packPanel=document.createElement('section');
+const packLabel=document.createElement('label');packLabel.textContent='오프라인 speech pack (.speech.json, 최대 5MB)';
+const packInput=document.createElement('input');packInput.type='file';packInput.accept='.speech.json,application/json';packInput.id='speechPackFile';packLabel.append(packInput);
+const packPlay=document.createElement('button');packPlay.id='speechPackPlay';packPlay.textContent='팩 재생';packPlay.disabled=true;
+const packStop=document.createElement('button');packStop.id='speechPackStop';packStop.textContent='팩 정지';
+const packInfo=document.createElement('p');packInfo.id='speechPackStatus';packInfo.textContent='로컬 CLI speech.py로 먼저 생성 → 파일 가져오기 → 재생. 원클릭 TTS 아님. CTC 추정 자모 구간, 최대 0.12초 렌더 보간. I(ㅣㅟㅡㅢ)는 전용 그림 없이 E 대체.';
+packPanel.append(packLabel,packPlay,packStop,packInfo);el('audioStatus').after(packPanel);
+packInput.addEventListener('change',async()=>{speech.stop('pack');stopAudio();loadedPack=undefined;packPlay.disabled=true;const generation=packGeneration;try{const file=packInput.files?.[0];if(!file||file.size>MAX_PACK_BYTES)throw Error('팩 제한 5MB');const parsed=await validateSpeechPack(await file.text());if(generation!==packGeneration)return;loadedPack=parsed;packPlay.disabled=false;packInfo.textContent='검증 완료 · '+parsed.text+' · I→E 대체 / 추정 구간';}catch(e){if(generation===packGeneration)packInfo.textContent='오류 · '+String(e);}});
+packPlay.addEventListener('click',()=>{if(!project||busy||!loadedPack)return;speech.stop('pack');stopAudio();playingPack=loadedPack;const bytes=Uint8Array.from(atob(loadedPack.audio.split(',')[1]),c=>c.charCodeAt(0));void audio.play(new File([bytes],'speech.wav',{type:'audio/wav'}),loadedPack.duration);});
+packStop.addEventListener('click',()=>stopAudio());
 const pose=createGentlePose();
 const synth=window.speechSynthesis;
-const speech=createLocalSpeech({synth,utterance:text=>new SpeechSynthesisUtterance(text),now:()=>performance.now(),setTimer:(f,ms)=>window.setTimeout(f,ms),clearTimer:id=>window.clearTimeout(id),onMouth:value=>{if(project)project.params.ParamMouthOpen=value;input('ParamMouthOpen').value=String(value);el('ParamMouthOpen-value').textContent=value.toFixed(3);},onStatus:text=>{el('ttsStatus').textContent=text;},onTakeover:()=>{stopAudio();playing=false;input('follow').checked=false;el('play').textContent='재생';}});
+const speech=createLocalSpeech({synth,utterance:text=>new SpeechSynthesisUtterance(text),now:()=>performance.now(),setTimer:(f,ms)=>window.setTimeout(f,ms),clearTimer:id=>window.clearTimeout(id),onMouth:mouthOverlay,onStatus:text=>{el('ttsStatus').textContent=text;},onTakeover:()=>{stopAudio();takeMouth();}});
 function voices(){const select=el<HTMLSelectElement>('ttsVoice'),prior=select.value;select.replaceChildren();for(const voice of localVoices(synth?.getVoices()??[])){const option=document.createElement('option');option.value=voice.voiceURI;option.textContent=`${voice.name} · ${voice.lang} · 로컬`;select.append(option);}if([...select.options].some(o=>o.value===prior))select.value=prior;if(!select.options.length){const option=document.createElement('option');option.value='';option.textContent='로컬 음성 없음';select.append(option);}if(!speech.active)el('ttsStatus').textContent=select.value?'로컬 음성 준비 · 말하기를 눌러.':'오류 · 로컬 음성이 없어. 로컬 오디오 파일을 선택해.';}
 synth?.addEventListener('voiceschanged',voices);voices();
 el('ttsRefresh').addEventListener('click',voices);
 el('ttsSpeak').addEventListener('click',()=>{if(!project||busy)return;stopAudio();speech.speak(el<HTMLTextAreaElement>('ttsText').value,el<HTMLSelectElement>('ttsVoice').value);});
-el('ttsStop').addEventListener('click',()=>speech.stop());
+el('ttsStop').addEventListener('click',()=>{speech.stop();if(!audio.active)takeMouth();});
 el('ttsVoice').addEventListener('change',()=>speech.stop('voice'));
-for(const [id,kind] of [['poseBow','bow'],['poseNod','nod'],['poseTilt','tilt']] as const)el(id).addEventListener('click',()=>{if(!project||busy)return;if(pose.start(kind)){playing=false;el('play').textContent='재생';input('follow').checked=false;el('poseStatus').textContent='포즈 진행 · 작은 머리/몸 움직임';}});
+const poseButtons=[['poseBow','bow'],['poseNod','nod'],['poseTilt','tilt']] as const;
+for(const [id,kind] of poseButtons)el(id).addEventListener('click',()=>{if(!project||busy)return;if(pose.start(kind))el('poseStatus').textContent='포즈 진행 · 캐릭터 전체 인사 기울임 (머리만 회전 아님)';});
 el('poseStop').addEventListener('click',()=>pose.cancel());
-function stopAudio(){if(audio.active){audio.stop();audioStatus('정지 · 입 닫힘 / 오디오 해제');}}
+function stopAudio(){packGeneration++;playingPack=undefined;audio.stop();audioStatus('정지 · 입 닫힘 / 오디오 해제');}
 function stopMotion(){speech.stop('transition');stopAudio();pose.cancel(true);el('poseStatus').textContent='이전 포즈 복원 · 직접 조작 우선';}
 el('audioPlay').addEventListener('click',()=>speech.stop('audio'));
 input('audioFile').addEventListener('change',()=>speech.stop('audio'));
 window.addEventListener('pagehide',()=>{speech.stop('pagehide');pose.cancel(true);synth?.removeEventListener('voiceschanged',voices);});
 el('audioPlay').addEventListener('click',()=>{stopAudio();if(!project||busy){audioStatus('오류 · 이미지 준비가 끝난 뒤 재생해.');return;}const file=input('audioFile').files?.[0];if(!file){audioStatus('오류 · 오디오 파일을 선택해.');return;}void audio.play(file);});
-el('audioStop').addEventListener('click',()=>{audio.stop();audioStatus('정지 · 입 닫힘 / 오디오 해제');});
+el('audioStop').addEventListener('click',()=>{audio.stop();if(!speech.active)takeMouth();audioStatus('정지 · 입 닫힘 / 오디오 해제');});
 input('audioFile').addEventListener('change',()=>{stopAudio();audioStatus(input('audioFile').files?.[0]?'파일 선택 완료 · 재생 버튼을 눌러.':'파일 선택 후 재생해.');});
 window.addEventListener('pagehide',()=>{audio.stop('pagehide');runtime?.dispose();});
 el('copyPrompt').addEventListener('click',async()=>{const text=el<HTMLTextAreaElement>('partPrompt');try{await navigator.clipboard.writeText(text.value);el('promptStatus').textContent='프롬프트 복사 완료';}catch{text.focus();text.select();el('promptStatus').textContent='자동 복사 불가 · 선택된 텍스트를 Ctrl+C / ⌘C로 복사해.';}});
@@ -67,10 +84,10 @@ async function rebuild(){stopMotion();status('파트 분리 / 네이티브 리�
  }
  const nextRuntime=new RigRuntime(buildImageRig(validated,next,w,h,materials));await nextRuntime.loadAssets();runtime?.dispose();runtime=nextRuntime;lastSignature="";textures=next;project=validated;sync();status('준비 완료 · 로컬 초안 / 최대 포즈 시각 검증 전');}
 for(const role of ROLES){const option=document.createElement('option');option.value=role;option.textContent=LABELS[role];el('role').append(option);}el<HTMLSelectElement>('role').value='head';
-for(const p of PARAMS){const label=document.createElement('label');label.textContent=p.label;const out=document.createElement('output');out.id=`${p.id}-value`;const slider=document.createElement('input');slider.id=p.id;slider.type='range';slider.min=String(p.min);slider.max=String(p.max);slider.step='.1';slider.value=String(p.default);slider.oninput=()=>{if(!project)return;const value=Number(slider.value);stopMotion();playing=false;el('play').textContent='재생';project.params[p.id]=value;slider.value=String(value);out.textContent=slider.value;};label.append(out,slider);el('params').append(label);}
+for(const p of PARAMS){const label=document.createElement('label');label.textContent=p.label;const out=document.createElement('output');out.id=`${p.id}-value`;const slider=document.createElement('input');slider.id=p.id;slider.type='range';slider.min=String(p.min);slider.max=String(p.max);slider.step='.1';slider.value=String(p.default);slider.oninput=()=>{if(!project)return;const value=Number(slider.value);if(p.id.startsWith('ParamMouth')){speech.stop('mouth slider');stopAudio();}project.params[p.id]=value;slider.value=String(value);out.textContent=slider.value;};label.append(out,slider);el('params').append(label);}
 function on(id:string,action:()=>void|Promise<void>,event='click'){el(id).addEventListener(event,()=>void run(action));}
 // Independent of run's busy guard: transitions must cancel pending decode immediately.
-for(const [id,event] of [['reset','click'],['play','click'],['source','change'],['load','change']] as const)el(id).addEventListener(event,stopMotion);
+for(const [id,event] of [['reset','click'],['source','change'],['load','change']] as const)el(id).addEventListener(event,stopMotion);
 on('applyPlacement',async()=>{if(!selected().replacement)throw Error('선택 파트 이미지를 먼저 가져와.');const draft=structuredClone(project);draft.parts.find(p=>p.id===selected().id)!.placement={x:input('placeX').valueAsNumber,y:input('placeY').valueAsNumber,scale:input('placeScale').valueAsNumber};const prior=project;project=parseProject(JSON.stringify(draft));try{await rebuild();}catch(e){project=prior;throw e;}});
 on('source',async()=>{const f=input('source').files?.[0];if(!f)return;project=replaceSource(project,await local(f,f.name));await rebuild();status('원본 교체 완료 · 기존 마스크 유지. 다른 구도라면 조정해 줘.');},'change');
 on('part',async()=>{const f=input('part').files?.[0];if(!f)return;Object.assign(selected(),replacePart(selected(),await local(f,f.name)));await rebuild();},'change');
@@ -88,21 +105,36 @@ let drag=-1,oldPolygon:typeof project.parts[number]['polygon'];
 mask.onpointerdown=e=>{if(!project||busy)return;const r=mask.getBoundingClientRect(),x=(e.clientX-r.left)/r.width,y=(e.clientY-r.top)/r.height;drag=selected().polygon.findIndex(p=>Math.hypot((p[0]-x)*r.width,(p[1]-y)*r.height)<15);oldPolygon=structuredClone(selected().polygon);mask.setPointerCapture(e.pointerId);};
 mask.onpointermove=e=>{if(drag<0||busy)return;const r=mask.getBoundingClientRect();selected().polygon[drag]=[Math.max(0,Math.min(1,(e.clientX-r.left)/r.width)),Math.max(0,Math.min(1,(e.clientY-r.top)/r.height))];maskView();};
 mask.onpointerup=()=>{if(drag<0)return;drag=-1;void run(async()=>{try{parseProject(JSON.stringify(project));}catch(e){selected().polygon=oldPolygon;maskView();throw e;}await rebuild();});};
-stage.onpointermove=e=>{if(!project||audio.active||speech.active||pose.active||playing||!input('follow').checked)return;const r=stage.getBoundingClientRect();project.params.ParamAngleX=((e.clientX-r.left)/r.width-.5)*24;project.params.ParamAngleY=(.5-(e.clientY-r.top)/r.height)*16;};
+stage.onpointermove=e=>{if(!project||!input('follow').checked)return;const r=stage.getBoundingClientRect();project.params.ParamAngleX=((e.clientX-r.left)/r.width-.5)*24;project.params.ParamAngleY=(.5-(e.clientY-r.top)/r.height)*16;};
 function frame(now:number){
  const dt=Math.min(.05,(now-previous)/1000);previous=now;
  if(runtime&&project){
   audio.tick(dt);speech.tick(now);
-  if(playing){elapsed+=dt;project.params.ParamAngleX=Math.sin(elapsed)*8;project.params.ParamAngleY=Math.sin(elapsed*.7)*4;project.params.ParamBodyAngleZ=Math.sin(elapsed*.6)*2;const blink=elapsed%4;project.params.ParamEyeLOpen=project.params.ParamEyeROpen=blink<.16?Math.abs(blink-.08)/.08:1;}
-  const wasPosing=pose.active,renderParams=pose.tick(dt,project.params);
-  if(wasPosing&&!pose.active)el('poseStatus').textContent='이전 포즈 복원 완료';
+  const wasPosing=pose.active,poseMotion=pose.tick(dt);
+  if(wasPosing&&!pose.active)el('poseStatus').textContent='전체 기울임 복원 완료';
+  for(const [id,kind] of poseButtons)el(id).setAttribute('aria-pressed',String(pose.kind===kind));
   const active=playing||audio.active||speech.active||pose.active;
+  if(active)elapsed+=dt;else elapsed=0;
+  const renderParams=composeLabMotion(project.params,{seconds:elapsed,active,mouth:audio.active||speech.active?speechMouth:undefined});
+  if(playingPack&&audio.active){const shape=packShape(playingPack,audio.currentTime,speechMouth);renderParams.ParamMouthForm=shape.form;renderParams.ParamMouthOpen=shape.open;}
+  // Without registered expression textures, do not automatically scale face cutouts.
+  for(const [id,asset] of [['ParamEyeLOpen','eye-left-closed'],['ParamEyeROpen','eye-right-closed'],['ParamMouthOpen','mouth-A']]){
+   if(!runtime.rig.assets.some(a=>a.id===asset))renderParams[id]=project.params[id];
+  }
+  const motion=labRigidMotion(elapsed,playing||audio.active||speech.active);
+  // Drive only the spring, never head/body geometry or saved parameters.
+  renderParams.ParamHairDrive=active?Math.max(-4,Math.min(4,2.4*Math.sin(elapsed*1.8)+poseMotion.rotation*.7)):0;
+  stage.style.transformOrigin='50% 85%';
+  stage.style.transform=`translate(${motion.x+poseMotion.x}px, ${motion.y+poseMotion.y}px) rotate(${motion.rotation+poseMotion.rotation}deg)`;
+  // Sliders stay editable baselines; outputs describe the actual expression sent to the renderer.
+  for(const p of PARAMS)el(`${p.id}-value`).textContent=renderParams[p.id].toFixed(3);
   // Include overlay and ownership so the final exact baseline is rendered, then idle.
   const signature=JSON.stringify([renderParams,active,project.settings.physicsEnabled,closeup,input('mesh').checked,stage.clientWidth,stage.clientHeight]);
   if(needsLabRender(active,lastSignature,signature)){
-   if(!playing)runtime.resumeClock();
+   if(!wasActive)runtime.resumeClock();
    runtime.render(stage,renderParams,{transparent:true,showBounds:input('mesh').checked,zoom:closeup?3:1,panY:closeup?stage.clientHeight*.95:0,fitPadding:20});lastSignature=signature;
   }
+  wasActive=active;
  }
  requestAnimationFrame(frame);
 }requestAnimationFrame(frame);

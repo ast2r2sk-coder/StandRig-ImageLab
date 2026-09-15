@@ -19,6 +19,19 @@ Edit part masks, try expressions and hair physics, then export a portable HTML p
 
 </div>
 
+## Current development snapshot
+
+The latest implementation is on **`feat/part-guide-local-audio`**, tracked in [PR #1](https://github.com/ast2r2sk-coder/StandRig-ImageLab/pull/1), not merged into `image-lab`. The demo GIF illustrates an earlier build, not the new speech-pack feature.
+
+- Speech/audio, blinking and gentle motion run concurrently; pose clicks restart and return to the previous pose without interrupting speech.
+- Automatic motion uses small rigid translation/rotation instead of deforming the face/body. Hair spring effects are isolated and conservative. Manual angle sliders/pointer can still warp the image.
+- Optional **local Korean speech packs** combine macOS-generated WAV with estimated CTC jamo timing and drive E/A/O from the same audio clock. **I uses E artwork**, not a dedicated I texture. See [setup, usage, tests and licensing](docs/LOCAL-SPEECH.md).
+- Generation is a separate local CLI followed by pack import/play. The in-app browser TTS remains event-based; this is **not one-click in-app aligned TTS**.
+- Head-only nodding, natural full hair motion, dedicated I artwork and large-angle reconstruction remain unfinished. Greeting poses tilt the whole character, not a hand wave.
+- Bounded evidence: 10/10 new sentences aligned, 11/12 including controls; one original long greeting was rejected. Actual packaged-browser checks: 13 passed. These are not a general pronunciation-accuracy or naturalness guarantee.
+
+
+
 ## Why this fork?
 
 You have a character illustration, but not a layered PSD. You want to try a blink, move the head a little and see the hair respond before committing to a full rigging workflow.
@@ -48,7 +61,7 @@ The Image Lab editor does not automatically upload your artwork or require an im
 Use **Node.js 22 or 24**, npm, and a desktop browser. Chrome is the browser used for the sample's local checks.
 
 ```bash
-git clone --branch image-lab https://github.com/ast2r2sk-coder/StandRig-ImageLab.git
+git clone --branch feat/part-guide-local-audio https://github.com/ast2r2sk-coder/StandRig-ImageLab.git
 cd StandRig-ImageLab
 npm ci
 npm run build
@@ -77,6 +90,19 @@ node scripts/package-image-lab.mjs
 Open `workspace/delivery/Image-Lab.html` in desktop Chrome. The generated file includes the sample, editor and runtime; it does not need a running server. Building it requires Node/npm, but opening it does not.
 
 When distributing a build, include `LICENSE`, `NOTICE`, `THIRD_PARTY_NOTICES.md`, `licenses/` and the [character notice](assets/character/NOTICE.md). The packager does not bundle those notices automatically. Do not publish your entire `workspace/` directory.
+
+### Offline speech packs (local CLI, not one-click TTS)
+
+Generate using `python3 scripts/local-speech/speech.py --text '안녕하세요' --model /path/to/local/model --output workspace/local-speech/new-run` with the local speech Python dependencies installed. Only aligned cases produce `utterance.speech.json`. To package an existing actual alignment without inference:
+
+```bash
+python3 scripts/local-speech/speech.py --pack-existing workspace/local-speech/batch/new-01
+python3 scripts/local-speech/speech.py --pack-existing workspace/local-speech/batch/new-02
+```
+
+In Image Lab, choose the separate speech-pack file input, then **팩 재생** / **팩 정지**. No API/server is required. The embedded WAV and shapes share the audio context clock. Packs are limited to 5MB and 30 seconds; SHA-256, WAV structure/duration and aligned token bounds/confidence are checked, followed by decoded-duration checking at playback.
+
+Timing is **estimated CTC jamo/grapheme emission occupancy, not full phoneme alignment**. Original token intervals are unchanged. Rendering holds a vowel for at most 0.12 seconds after its observed end, gated by audio RMS; this is render interpolation, not additional observed occupancy. I vowels **ㅣ/ㅟ/ㅡ/ㅢ use the closest existing E texture** until dedicated artwork exists: there is no unique I texture. E-family vowels use E, rounded O/U-family vowels use O, and A/ㅓ-family vowels use A. Packs contain dialogue and audio: keep private local artifacts private. Source replacement still disables sample-specific expression artwork.
 
 ## What to expect
 

@@ -41,13 +41,13 @@ test('synthesis errors and thrown backend calls close mouth visibly',()=>{
  const s=setup();s.controller.speak('안녕','local-ko');s.spoken[0].onstart();s.spoken[0].onerror({error:'synthesis-failed'});assert.equal(s.mouth,0);assert.match(s.status,/오류/);assert.equal(s.timers.size,0);
  s.synth.speak=()=>{throw Error('unavailable');};assert.equal(s.controller.speak('안녕','local-ko'),false);assert.equal(s.controller.active,false);
 });
-test('pure gentle timelines are bounded, smooth and end at saved angles only',()=>{
- const sample=fn('poseTimeline');for(const kind of ['bow','nod','tilt']){assert.deepEqual(sample(kind,0),sample(kind,10));let previous=sample(kind,0);for(let t=.01;t<=3;t+=.01){const next=sample(kind,t);for(const [id,value] of Object.entries(next)){assert.match(id,/^Param(?:Body)?Angle[XYZ]$/);assert.ok(Math.abs(value)<=4);assert.ok(Math.abs(value-previous[id])<.2);}previous=next;}}
+test('whole-character timelines are bounded, smooth and return to identity without warp keys',()=>{
+ const sample=fn('poseTimeline');for(const kind of ['bow','nod','tilt']){assert.deepEqual(sample(kind,0),sample(kind,10));let previous=sample(kind,0);for(let t=.01;t<=3;t+=.01){const next=sample(kind,t);assert.deepEqual(Object.keys(next).sort(),['rotation','x','y']);for(const [id,value] of Object.entries(next)){assert.ok(Math.abs(value)<=4);assert.ok(Math.abs(value-previous[id])<.2);}previous=next;}}
  assert.throws(()=>sample('wave',0));
 });
-test('pose overlay preserves baseline/mouth, supports smooth cancellation and rejects overlapping starts',()=>{
- const p=fn('createGentlePose')();const base={ParamAngleY:2,ParamAngleZ:1,ParamBodyAngleY:1,ParamMouthOpen:.6};
- assert.equal(p.start('bow'),true);assert.deepEqual(p.tick(0,base),base);const active=p.tick(.5,base);assert.notEqual(active.ParamAngleY,base.ParamAngleY);assert.equal(active.ParamMouthOpen,.6);assert.equal(p.start('nod'),false);
- p.cancel();assert.deepEqual(p.tick(0,base),active);const restored=p.tick(.4,base);assert.deepEqual(restored,base);assert.equal(p.active,false);assert.equal(base.ParamAngleY,2);
- p.start('tilt');p.tick(.5,base);assert.deepEqual(p.tick(4,base),base);assert.equal(p.active,false);
+test('rigid pose supports smooth cancellation and replay without owning expressions',()=>{
+ const p=fn('createGentlePose')(),identity={x:0,y:0,rotation:0};
+ assert.equal(p.start('bow'),true);assert.deepEqual(p.tick(0),identity);const active=p.tick(.5);assert.ok(active.rotation>1);assert.equal(p.start('nod'),true);
+ p.cancel();assert.deepEqual(p.tick(0),active);assert.deepEqual(p.tick(.4),identity);assert.equal(p.active,false);
+ p.start('tilt');p.tick(.5);assert.deepEqual(p.tick(4),identity);assert.equal(p.active,false);
 });

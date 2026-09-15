@@ -25,12 +25,17 @@ test('full-stage exported part maps back to stage without polygon recrop or shri
  assert.deepEqual(core.replacementPlacement({width:120,height:140},polygon,600,900),{...core.regionBounds(polygon,600,900),clip:true});
 });
 test('native rig passes actual core validator',()=>{const result=validateRig(rig());assert.equal(result.ok,true,JSON.stringify(result));});
-test('compound head extremes share identical body/head/hair geometry instead of cutout rotations',()=>{
+test('compound extremes preserve common head/body ancestry with a hair-only extra field',()=>{
  const r=rig();for(const sign of [-1,1]){
  const frame=resolveRigFrame(r,{ParamAngleX:12*sign,ParamAngleY:8*sign,ParamAngleZ:8*sign},identityMatrix(),{physics:false});
  const head=frame.parts.get('head');
  for(const id of ['body','hair-back','hair-left','hair-right']){
- const part=frame.parts.get(id);assert.deepEqual(part.matrix,head.matrix,id+' transform separates');assert.deepEqual(part.sharedWarps,head.sharedWarps,id+' shared field differs');assert.deepEqual(part.warp,head.warp,id+' local warp differs');
+ const part=frame.parts.get(id);assert.deepEqual(part.matrix,head.matrix,id+' transform separates');
+ const isHair=id.startsWith('hair-');
+ assert.equal(part.sharedWarps.length,head.sharedWarps.length+(isHair?1:0));
+ assert.deepEqual(part.sharedWarps.slice(0,head.sharedWarps.length),head.sharedWarps,id+' common ancestry differs');
+ if(isHair)assert.equal(r.parts.find(p=>p.id===id).deformerId,'hair-field');
+ assert.deepEqual(part.warp,head.warp,id+' local warp differs');
  }
  assert.ok(head.sharedWarps?.length,'missing continuous head field');
  }
