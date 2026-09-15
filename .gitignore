@@ -9,6 +9,8 @@ public/assets-manifest.json
 *.log
 workspace/
 checkpoints/
+__pycache__/
+*.py[cod]
 exports/
 releases/
 .env
