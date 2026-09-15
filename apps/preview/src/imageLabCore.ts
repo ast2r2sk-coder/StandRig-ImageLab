@@ -18,7 +18,13 @@ export const PARAMS = [
 export const MAX_PROJECT_BYTES = 40 * 1024 * 1024;
 export const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
 export interface LocalImage { name:string; data:string; width:number; height:number }
-export interface PartRegion { id:Role; polygon:Point[]; order:number; replacement?:LocalImage }
+export interface Placement {x:number;y:number;scale:number}
+export interface PartRegion { id:Role; polygon:Point[]; order:number; replacement?:LocalImage; placement?:Placement }
+function placement(value:unknown):Placement {
+ const p=record(value);
+ if(typeof p.x!=='number'||!Number.isFinite(p.x)||Math.abs(p.x)>1||typeof p.y!=='number'||!Number.isFinite(p.y)||Math.abs(p.y)>1||typeof p.scale!=='number'||!Number.isFinite(p.scale)||p.scale<.1||p.scale>4)throw Error('배치: X/Y -1~1, 배율 0.1~4');
+ return {x:p.x,y:p.y,scale:p.scale};
+}
 export interface LabSettings { keyEnabled:boolean; keyColor:[number,number,number]; tolerance:number; softness:number; overlap:number; physicsEnabled:boolean; stiffness:number; damping:number }
 export interface LabProject {
   format:'image-standrig-project'; version:1; preset:'supplied-front'|'manual'; source:LocalImage;
@@ -115,7 +121,7 @@ export function parseProject(text:string):LabProject {
   const seen=new Set<string>();
   const parts=p.parts.map(v=>{const r=record(v);const id=r.id as Role;
     if(!ROLES.includes(id)||seen.has(id))throw new Error('잘못되거나 중복된 역할이야.');seen.add(id);
-    return {id,polygon:polygon(r.polygon),order:Math.round(finite(r.order,-50,50)),...(r.replacement===undefined?{}:{replacement:localImage(r.replacement)})};});
+    return {id,polygon:polygon(r.polygon),order:Math.round(finite(r.order,-50,50)),...(r.placement===undefined?{}:{placement:placement(r.placement)}),...(r.replacement===undefined?{}:{replacement:localImage(r.replacement)})};});
   const values=record(p.params); const params=Object.fromEntries(PARAMS.map(d=>[d.id,finite(d.id==='ParamMouthForm'&&values[d.id]===undefined?0:values[d.id],d.min,d.max)]));
   return {format:'image-standrig-project',version:1,preset:p.preset as LabProject['preset'],source:localImage(p.source),parts,settings:normalizeSettings(p.settings),params,anchors:{headPivot,headRadius,headJoin:a.headJoin,bodyPivot}};
 }
@@ -195,7 +201,14 @@ export function regionBounds(polygon:Point[],width:number,height:number) {
   return {x,y,width:Math.max(1,Math.min(width,Math.ceil(Math.max(...xs)))-x),height:Math.max(1,Math.min(height,Math.ceil(Math.max(...ys)))-y)};
 }
 // Full-stage PNG exports include bleed outside the editable polygon. Preserve it on reimport.
-export function replacementPlacement(image:{width:number;height:number},polygon:Point[],width:number,height:number) {
-  return image.width===width&&image.height===height?{x:0,y:0,width,height,clip:false}:{...regionBounds(polygon,width,height),clip:true};
+export function replacePart(part:PartRegion,replacement?:LocalImage):PartRegion {
+ return {...part,replacement,placement:undefined};
+}
+export function replacementPlacement(image:{width:number;height:number},polygon:Point[],width:number,height:number,transform?:Placement,sourceCanvas?:{width:number;height:number}) {
+ const fullCanvas=(image.width===width&&image.height===height)||(sourceCanvas!==undefined&&image.width===sourceCanvas.width&&image.height===sourceCanvas.height);
+ const base=fullCanvas?{x:0,y:0,width,height,clip:false}:{...regionBounds(polygon,width,height),clip:true};
+ if(!transform)return base;
+ const t=placement(transform);
+ return {...base,x:base.x+t.x*width-base.width*(t.scale-1)/2,y:base.y+t.y*height-base.height*(t.scale-1)/2,width:base.width*t.scale,height:base.height*t.scale};
 }
 export function needsLabRender(playing:boolean,previous:string,current:string){return playing||previous!==current;}

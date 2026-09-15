@@ -35,7 +35,8 @@ Image Lab adds that starting point to StandRig: load a PNG or JPG, edit the part
 | Make the sample blink | Separate left/right eye controls with half-closed and closed-eye artwork |
 | Change the sample's mouth | A/E/O texture states, with separate openness and shape controls |
 | Experiment with motion | Head/body parameters, pointer input and StandRig hair springs |
-| Replace a part | Import or export an individual part image without starting over |
+| Replace a part | Follow role prompts, import a part, then adjust masks, layer order and placement; importing/resetting a part clears placement |
+| Try local audio | Play a local audio file with amplitude-only mouth opening; no microphone, TTS or phoneme alignment |
 | Keep editing later | Save and reopen a project JSON |
 | Take the result with you | Export an image-embedded StandRig JSON or build one offline HTML file |
 
@@ -84,7 +85,7 @@ Small motions and sample expressions are the useful starting point. Large turns 
 - The supplied head/body underlay images are included as references, but are **not applied at runtime**.
 - Expression transitions use texture blending. Skin seams, intermediate ghosting, magenta edge residue and thin mesh lines may remain visible.
 - Replacing the source disables the sample-specific expression overlays. New characters need their own masks and registered expression artwork.
-- There is **no Cubism `.moc3`/`.cmo3` export**, camera face tracking or audio lip sync in Image Lab.
+- Local audio files support amplitude-only mouth opening, not phoneme alignment. Microphone input and TTS are unsupported; audio is not saved in project JSON. There is **no Cubism `.moc3`/`.cmo3` export** or camera face tracking.
 - The interface is not yet translated. Mobile file opening and exports need more testing.
 
 See the [detailed usage notes](README-IMAGE-LAB.md) and [material inventory](docs/IMAGE-LAB-MATERIALS.md) before building on the sample.
